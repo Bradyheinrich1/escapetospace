@@ -53,6 +53,14 @@ export default class GameScene extends Phaser.Scene {
         this.backgroundPlanets = [];
         this.gameWidth = window.innerWidth;
         this.gameHeight = window.innerHeight;
+        
+        // Double tap tracking
+        this.lastLeftTap = 0;
+        this.lastRightTap = 0;
+        this.doubleTapThreshold = 10000; // Time window for double tap (in ms)
+        this.boostSpeed = 10000; // Horizontal boost speed
+        this.boostDuration = 1500; // How long the boost lasts (in ms)
+        this.currentBoostEnd = 0; // When the current boost should end
     }
 
     preload() {
@@ -156,8 +164,11 @@ export default class GameScene extends Phaser.Scene {
 
         // When planets wrap around, give them a new random type
         const updatePlanet = (planet) => {
-            const newType = Phaser.Math.RND.pick(planetTypes);
-            planet.setTexture(newType);
+            // Only update if the scene is active and the planet exists
+            if (this.scene.isActive() && planet && planet.scene && planet.scene.sys) {
+                const newType = Phaser.Math.RND.pick(planetTypes);
+                planet.setTexture(newType);
+            }
         };
         
         // Update the update method to change planet types when wrapping
@@ -165,8 +176,13 @@ export default class GameScene extends Phaser.Scene {
         this.update = function() {
             if (this.gameOver) return;
 
+            // Only process updates if the scene is active
+            if (!this.scene.isActive()) return;
+
             // Update background planets
             this.backgroundPlanets.forEach(planet => {
+                if (!planet || !planet.scene) return;  // Skip if planet is invalid
+                
                 // Move down extremely slowly relative to player speed (parallax effect)
                 planet.y -= this.gameSpeed * 0.0005 * planet.scale;  // Twice as slow
                 planet.rotation += planet.rotationSpeed;
@@ -381,11 +397,19 @@ export default class GameScene extends Phaser.Scene {
         // Create big asteroid
         const asteroid = this.asteroids.create(x, spawnY, 'bigAsteroid');
         
-        // Much smaller start size and very gradual growth
-        const baseScale = 0.08;
-        const growthScore = Math.max(0, this.score - 1000);
-        const scoreScale = growthScore / 500;
-        const scale = Math.min(baseScale + scoreScale, 2.0);
+        // Calculate maximum scale based on screen width (1/3 of screen width)
+        const maxScale = (this.gameWidth / 3) / asteroid.width;
+        
+        // Regular asteroid base scale is 0.08, so we'll start at 2x that
+        const baseScale = 0.16; // 2x regular asteroid size
+        
+        // Adjust growth rate to reach 5x regular size (0.4) more gradually
+        const growthScore = Math.max(0, this.score - 500); // Start growing immediately
+        const targetMaxScale = 0.4; // 5x the regular asteroid size (0.08 * 5)
+        const scoreScale = (growthScore / 2000) * (targetMaxScale - baseScale);
+        
+        // Apply scale with both the score-based growth and the maximum cap
+        const scale = Math.min(baseScale + scoreScale, maxScale);
         asteroid.setScale(scale);
         
         // Set downward velocity (faster than before to compensate for no gravity)
@@ -448,24 +472,50 @@ export default class GameScene extends Phaser.Scene {
             return;
         }
 
+        // Only process updates if the scene is active
+        if (!this.scene.isActive()) return;
+
         // Update background planets
         this.backgroundPlanets.forEach(planet => {
+            if (!planet || !planet.scene) return;  // Skip if planet is invalid
+            
             // Move down extremely slowly relative to player speed (parallax effect)
             planet.y -= this.gameSpeed * 0.0005 * planet.scale;  // Twice as slow
             planet.rotation += planet.rotationSpeed;
             
-            // Wrap around when off screen
+            // Wrap around when off screen and change to a new random planet type
             if (planet.y > this.cameras.main.scrollY + 900) {
                 planet.y = this.cameras.main.scrollY - 100;
                 planet.x = Phaser.Math.Between(0, 800);
             }
         });
 
-        // Handle horizontal movement
+        const currentTime = this.time.now;
+        let boosting = currentTime < this.currentBoostEnd;
+
+        // Handle horizontal movement with double-tap boost
         if (this.cursors.left.isDown) {
-            this.player.setAccelerationX(-500);
+            if (this.cursors.left.getDuration() < 16) {  // Just pressed
+                const timeSinceLastTap = currentTime - this.lastLeftTap;
+                if (timeSinceLastTap < this.doubleTapThreshold) {
+                    // Double tap detected - initiate boost
+                    this.currentBoostEnd = currentTime + this.boostDuration;
+                    this.player.setVelocityX(-this.boostSpeed);
+                }
+                this.lastLeftTap = currentTime;
+            }
+            this.player.setAccelerationX(boosting ? 0 : -500);
         } else if (this.cursors.right.isDown) {
-            this.player.setAccelerationX(500);
+            if (this.cursors.right.getDuration() < 16) {  // Just pressed
+                const timeSinceLastTap = currentTime - this.lastRightTap;
+                if (timeSinceLastTap < this.doubleTapThreshold) {
+                    // Double tap detected - initiate boost
+                    this.currentBoostEnd = currentTime + this.boostDuration;
+                    this.player.setVelocityX(this.boostSpeed);
+                }
+                this.lastRightTap = currentTime;
+            }
+            this.player.setAccelerationX(boosting ? 0 : 500);
         } else {
             this.player.setAccelerationX(0);
         }
