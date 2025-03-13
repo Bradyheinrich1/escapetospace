@@ -9,6 +9,7 @@
         src: url('./assets/fonts/Micro5-Regular.ttf') format('truetype');
         font-weight: normal;
         font-style: normal;
+        font-display: swap;
       }
 
       body {
@@ -28,5 +29,7 @@
   </head>
   <body>
     <div id="game"></div>
+    <!-- Font preloader div to ensure the font is loaded before Phaser uses it -->
+    <div style="font-family: 'Micro 5'; position: absolute; visibility: hidden;">.</div>
   </body>
 </html> 

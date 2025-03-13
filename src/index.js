@@ -1,13 +1,34 @@
 import Phaser from 'phaser';
 import GameScene from './scenes/GameScene';
+import StartScene from './scenes/StartScene';
+import LeaderboardScene from './scenes/LeaderboardScene';
+// Import the font to ensure it's included in the bundle
+import './assets/fonts/Micro5-Regular.ttf';
+
+// Add console logs for debugging
+console.log('Game initialization started');
+
+// Font loading check
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, setting up font loader');
+    // Create a font loader
+    const fontLoader = document.createElement('div');
+    fontLoader.style.fontFamily = 'Micro 5';
+    fontLoader.style.position = 'absolute';
+    fontLoader.style.visibility = 'hidden';
+    fontLoader.textContent = '.';
+    document.body.appendChild(fontLoader);
+    
+    console.log('Font loader added to DOM');
+});
 
 const config = {
     type: Phaser.AUTO,
     scale: {
         mode: Phaser.Scale.RESIZE,
         parent: 'game',
-        width: '100%',
-        height: '100%',
+        width: window.innerWidth,
+        height: window.innerHeight,
         min: {
             width: 320,
             height: 480
@@ -24,14 +45,19 @@ const config = {
             debug: false
         }
     },
-    scene: GameScene
+    scene: [StartScene, GameScene, LeaderboardScene]
 };
+
+console.log('Creating game instance with config:', config);
 
 // Create game instance
 const game = new Phaser.Game(config);
 
+console.log('Game instance created');
+
 // Handle mobile touch controls
 if ('ontouchstart' in window) {
+    console.log('Setting up mobile touch controls');
     let touchX = null;
     const touchThreshold = 50;
 
@@ -46,12 +72,15 @@ if ('ontouchstart' in window) {
         const diff = currentX - touchX;
         
         if (Math.abs(diff) > touchThreshold) {
-            const scene = game.scene.scenes[0];
-            if (scene && scene.player) {
+            // Get the active game scene
+            const gameScene = game.scene.getScene('GameScene');
+            
+            // Only control player if game scene is active and player exists
+            if (gameScene && gameScene.scene.isActive() && gameScene.player) {
                 if (diff > 0) {
-                    scene.player.setAccelerationX(500);
+                    gameScene.player.setAccelerationX(500);
                 } else {
-                    scene.player.setAccelerationX(-500);
+                    gameScene.player.setAccelerationX(-500);
                 }
             }
         }
@@ -60,10 +89,14 @@ if ('ontouchstart' in window) {
     });
 
     window.addEventListener('touchend', () => {
-        const scene = game.scene.scenes[0];
-        if (scene && scene.player) {
-            scene.player.setAccelerationX(0);
+        // Get the active game scene
+        const gameScene = game.scene.getScene('GameScene');
+        
+        // Only control player if game scene is active and player exists
+        if (gameScene && gameScene.scene.isActive() && gameScene.player) {
+            gameScene.player.setAccelerationX(0);
         }
+        
         touchX = null;
     });
 } 
