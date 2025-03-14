@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { FontStyles } from '../index';
 
 export default class LeaderboardScene extends Phaser.Scene {
     constructor() {
@@ -6,6 +7,7 @@ export default class LeaderboardScene extends Phaser.Scene {
         this.highScores = [];
         this.currentScore = 0;
         this.playerName = '';
+        this.fontLoaded = false;
         console.log('LeaderboardScene constructor called');
     }
 
@@ -29,99 +31,123 @@ export default class LeaderboardScene extends Phaser.Scene {
         this.saveHighScores();
     }
 
+    preload() {
+        // Load custom font using FontFace API
+        const customFont = new FontFace('Micro 5', 'url(src/assets/fonts/Micro5-Regular.ttf)');
+        customFont.load().then((font) => {
+            document.fonts.add(font);
+            this.fontLoaded = true;
+            
+            // Update text styles if they exist
+            if (this.titleText) this.titleText.setStyle(FontStyles.title);
+            if (this.playerScoreText) this.playerScoreText.setStyle(FontStyles.medium);
+            if (this.playAgainText) this.playAgainText.setStyle(FontStyles.medium);
+            if (this.newPlayerText) this.newPlayerText.setStyle(FontStyles.medium);
+            if (this.debugText) this.debugText.setStyle(FontStyles.standard);
+            
+            // Update leaderboard entries if they exist
+            if (this.leaderboardEntries) {
+                this.leaderboardEntries.forEach(entry => {
+                    entry.setStyle(FontStyles.standard);
+                });
+            }
+        }).catch((error) => {
+            console.error('Font loading failed:', error);
+        });
+    }
+
     create() {
         console.log('LeaderboardScene create called');
         
         // Simple black background
         this.background = this.add.rectangle(0, 0, window.innerWidth, window.innerHeight, 0x000000).setOrigin(0);
         
-        // Title
+        // Add title text with proper font size
         this.titleText = this.add.text(
             this.cameras.main.width / 2,
             50,
             'HIGH SCORES',
-            {
-                fontFamily: 'monospace',
-                fontSize: '48px',
-                fill: '#ffffff',
-                align: 'center'
-            }
+            FontStyles.title
         ).setOrigin(0.5);
         
-        // Your score
-        this.scoreText = this.add.text(
+        // Display player score with proper font size
+        this.playerScoreText = this.add.text(
             this.cameras.main.width / 2,
-            120,
-            `${this.playerName}: ${this.currentScore}`,
-            {
-                fontFamily: 'monospace',
-                fontSize: '32px',
-                fill: '#ffff00',
-                align: 'center'
-            }
+            100,
+            `Player: ${this.currentScore}`,
+            FontStyles.medium
+        ).setOrigin(0.5);
+        
+        // Create column headers with proper font size
+        this.rankHeaderText = this.add.text(
+            this.cameras.main.width * 0.2,
+            150,
+            'RANK',
+            FontStyles.standard
+        ).setOrigin(0.5);
+        
+        this.nameHeaderText = this.add.text(
+            this.cameras.main.width * 0.5,
+            150,
+            'NAME',
+            FontStyles.standard
+        ).setOrigin(0.5);
+        
+        this.scoreHeaderText = this.add.text(
+            this.cameras.main.width * 0.8,
+            150,
+            'SCORE',
+            FontStyles.standard
         ).setOrigin(0.5);
         
         // Display high scores in a simple format
-        this.displaySimpleHighScores();
+        this.displayLeaderboard();
         
         // Play again button
         this.playAgainButton = this.add.rectangle(
             this.cameras.main.width / 2,
-            this.cameras.main.height - 100,
-            250,
-            50,
+            this.cameras.main.height - 150,
+            300, // Increased button width for better visibility
+            80,  // Increased button height for better touch targets
             0x00aa00
-        ).setOrigin(0.5);
+        ).setInteractive();
         
         this.playAgainText = this.add.text(
             this.cameras.main.width / 2,
-            this.cameras.main.height - 100,
+            this.cameras.main.height - 150,
             'PLAY AGAIN',
-            {
-                fontFamily: 'monospace',
-                fontSize: '24px',
-                fill: '#ffffff',
-                align: 'center'
-            }
+            FontStyles.medium
         ).setOrigin(0.5);
-        
-        // Make play again button interactive
-        this.playAgainButton.setInteractive();
-        this.playAgainButton.on('pointerdown', () => {
-            console.log('Play again button clicked');
-            this.scene.start('GameScene');
-        });
         
         // New player button
         this.newPlayerButton = this.add.rectangle(
             this.cameras.main.width / 2,
-            this.cameras.main.height - 40,
-            250,
-            50,
-            0x0066aa
-        ).setOrigin(0.5);
+            this.cameras.main.height - 80,
+            300, // Increased button width for better visibility
+            80,  // Increased button height for better touch targets
+            0x0000aa
+        ).setInteractive();
         
         this.newPlayerText = this.add.text(
             this.cameras.main.width / 2,
-            this.cameras.main.height - 40,
+            this.cameras.main.height - 80,
             'NEW PLAYER',
-            {
-                fontFamily: 'monospace',
-                fontSize: '24px',
-                fill: '#ffffff',
-                align: 'center'
-            }
+            FontStyles.medium
         ).setOrigin(0.5);
         
-        // Make new player button interactive
-        this.newPlayerButton.setInteractive();
+        // Debug info
+        this.debugText = this.add.text(10, 10, 'LeaderboardScene loaded', FontStyles.standard);
+        
+        // Add button event handlers
+        this.playAgainButton.on('pointerdown', () => {
+            console.log('Play again button clicked');
+            this.scene.start('GameScene');
+        });
+
         this.newPlayerButton.on('pointerdown', () => {
             console.log('New player button clicked');
             this.scene.start('StartScene');
         });
-        
-        // Debug info
-        this.debugText = this.add.text(10, 10, 'LeaderboardScene loaded', { fontFamily: 'monospace', fontSize: '16px', fill: '#ffffff' });
         
         // Handle window resize
         this.scale.on('resize', this.handleResize, this);
@@ -143,25 +169,52 @@ export default class LeaderboardScene extends Phaser.Scene {
         }
         
         // Update score text
-        if (this.scoreText) {
-            this.scoreText.setPosition(width / 2, 120);
+        if (this.playerScoreText) {
+            this.playerScoreText.setPosition(width / 2, 100);
+        }
+        
+        // Update column headers
+        if (this.rankHeaderText) {
+            this.rankHeaderText.setPosition(width * 0.2, 150);
+        }
+        
+        if (this.nameHeaderText) {
+            this.nameHeaderText.setPosition(width * 0.5, 150);
+        }
+        
+        if (this.scoreHeaderText) {
+            this.scoreHeaderText.setPosition(width * 0.8, 150);
         }
         
         // Update buttons
         if (this.playAgainButton) {
-            this.playAgainButton.setPosition(width / 2, height - 100);
+            this.playAgainButton.setPosition(width / 2, height - 150);
+            // Ensure button size is appropriate for the screen
+            if (this.playAgainButton.setSize) {
+                this.playAgainButton.setSize(
+                    Math.min(300, width * 0.8), 
+                    80
+                );
+            }
         }
         
         if (this.playAgainText) {
-            this.playAgainText.setPosition(width / 2, height - 100);
+            this.playAgainText.setPosition(width / 2, height - 150);
         }
         
         if (this.newPlayerButton) {
-            this.newPlayerButton.setPosition(width / 2, height - 40);
+            this.newPlayerButton.setPosition(width / 2, height - 80);
+            // Ensure button size is appropriate for the screen
+            if (this.newPlayerButton.setSize) {
+                this.newPlayerButton.setSize(
+                    Math.min(300, width * 0.8), 
+                    80
+                );
+            }
         }
         
         if (this.newPlayerText) {
-            this.newPlayerText.setPosition(width / 2, height - 40);
+            this.newPlayerText.setPosition(width / 2, height - 80);
         }
         
         // Update debug text
@@ -169,115 +222,81 @@ export default class LeaderboardScene extends Phaser.Scene {
             this.debugText.setPosition(10, 10);
         }
         
-        // Redraw high scores
-        this.displaySimpleHighScores();
+        // Update leaderboard entries
+        this.displayLeaderboard();
     }
     
     loadHighScores() {
-        try {
-            const savedScores = localStorage.getItem('highScores');
-            this.highScores = savedScores ? JSON.parse(savedScores) : [];
-            console.log('Loaded high scores:', this.highScores);
-        } catch (e) {
-            console.error('Error loading high scores:', e);
-            this.highScores = [];
-        }
+        const savedScores = localStorage.getItem('highScores');
+        this.highScores = savedScores ? JSON.parse(savedScores) : [];
+        console.log('Loaded high scores:', this.highScores);
     }
     
     saveHighScores() {
-        try {
-            localStorage.setItem('highScores', JSON.stringify(this.highScores));
-            console.log('Saved high scores:', this.highScores);
-        } catch (e) {
-            console.error('Error saving high scores:', e);
-        }
+        localStorage.setItem('highScores', JSON.stringify(this.highScores));
+        console.log('Saved high scores:', this.highScores);
     }
     
     addScore(name, score) {
-        // Only add score if it's greater than 0
-        if (score <= 0) return;
-        
-        // Add the new score
+        // Add score to high scores
         this.highScores.push({ name, score });
         
-        // Sort high scores (highest first)
+        // Sort high scores in descending order
         this.highScores.sort((a, b) => b.score - a.score);
         
-        // Keep only top 10 scores
+        // Limit to top 10 scores
         if (this.highScores.length > 10) {
             this.highScores = this.highScores.slice(0, 10);
         }
-        
-        console.log('Added score, new high scores:', this.highScores);
     }
     
-    displaySimpleHighScores() {
-        // Remove any existing score texts
-        if (this.scoreTexts) {
-            this.scoreTexts.forEach(text => text.destroy());
+    displayLeaderboard() {
+        // Clear any existing leaderboard entries
+        if (this.leaderboardEntries) {
+            this.leaderboardEntries.forEach(entry => entry.destroy());
         }
         
-        this.scoreTexts = [];
+        this.leaderboardEntries = [];
         
-        // Display high scores in a simple format
+        // Display top 10 scores
         const startY = 200;
-        const lineHeight = 30;
+        const spacing = 50; // Increased spacing for better readability
         
-        // Header
-        const headerText = this.add.text(
-            this.cameras.main.width / 2,
-            startY,
-            'RANK  NAME                SCORE',
-            {
-                fontFamily: 'monospace',
-                fontSize: '20px',
-                fill: '#ffffff',
-                align: 'center'
-            }
-        ).setOrigin(0.5);
-        
-        this.scoreTexts.push(headerText);
-        
-        // Scores
         for (let i = 0; i < Math.min(this.highScores.length, 10); i++) {
-            const score = this.highScores[i];
-            const isCurrentScore = score.name === this.playerName && score.score === this.currentScore;
+            const entry = this.highScores[i];
             
-            // Format the score line
-            let rankText = `${i + 1}`.padEnd(6);
-            let nameText = score.name.substring(0, 15).padEnd(20);
-            let scoreText = `${score.score}`;
-            
-            const text = this.add.text(
-                this.cameras.main.width / 2,
-                startY + (i + 1) * lineHeight,
-                `${rankText}${nameText}${scoreText}`,
-                {
-                    fontFamily: 'monospace',
-                    fontSize: '18px',
-                    fill: isCurrentScore ? '#ffff00' : '#ffffff',
-                    align: 'center'
-                }
+            // Rank
+            const rankText = this.add.text(
+                this.cameras.main.width * 0.2,
+                startY + (i * spacing),
+                `${i + 1}`,
+                FontStyles.standard
             ).setOrigin(0.5);
             
-            this.scoreTexts.push(text);
-        }
-        
-        // If no scores, show a message
-        if (this.highScores.length === 0) {
-            const noScoresText = this.add.text(
-                this.cameras.main.width / 2,
-                startY + lineHeight,
-                'No high scores yet!',
-                {
-                    fontFamily: 'monospace',
-                    fontSize: '20px',
-                    fill: '#ffffff',
-                    align: 'center'
-                }
+            // Name
+            const nameText = this.add.text(
+                this.cameras.main.width * 0.5,
+                startY + (i * spacing),
+                entry.name,
+                FontStyles.standard
             ).setOrigin(0.5);
             
-            this.scoreTexts.push(noScoresText);
+            // Score
+            const scoreText = this.add.text(
+                this.cameras.main.width * 0.8,
+                startY + (i * spacing),
+                `${entry.score}`,
+                FontStyles.standard
+            ).setOrigin(0.5);
+            
+            // Highlight the player's score
+            if (entry.name === this.playerName && entry.score === this.currentScore) {
+                rankText.setFill('#ffff00');
+                nameText.setFill('#ffff00');
+                scoreText.setFill('#ffff00');
+            }
+            
+            this.leaderboardEntries.push(rankText, nameText, scoreText);
         }
     }
 } 

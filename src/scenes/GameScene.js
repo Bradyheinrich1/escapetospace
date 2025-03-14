@@ -21,23 +21,7 @@ import ringPlanetGreen from '../assets/ring-planet-green.png';
 import ringedPlanetBrown from '../assets/ringed-planet-brown.png';
 import yellowPlanetOne from '../assets/yellow-planet-one.png';
 import halfEarth from '../assets/halfearth.png';
-
-const textStyle = {
-    fontFamily: 'Micro 5',
-    fontSize: '24px',
-    fill: '#fff',
-    padding: { x: 10, y: 10 }
-};
-
-const gameOverStyle = {
-    fontFamily: 'Micro 5',
-    fontSize: '800px',
-    fill: '#ff0000',
-    align: 'center',
-    padding: { x: 40, y: 40 },
-    stroke: '#000000',
-    strokeThickness: 16
-};
+import { FontStyles } from '../index';
 
 export default class GameScene extends Phaser.Scene {
     constructor() {
@@ -49,7 +33,6 @@ export default class GameScene extends Phaser.Scene {
         this.asteroids = null;
         this.gameOver = false;
         this.spawnTimer = null;
-        this.bigAsteroidTimer = null;
         this.backgroundPlanets = [];
         this.gameWidth = window.innerWidth;
         this.gameHeight = window.innerHeight;
@@ -57,10 +40,21 @@ export default class GameScene extends Phaser.Scene {
         // Player movement speed
         this.playerSpeed = 300;
         
+        // Difficulty scaling properties
+        this.baseAsteroidSpeed = 80;
+        this.baseSpawnDelay = 500;
+        this.difficultyInterval = 500; // Height interval for increasing difficulty
+        
         // Object pooling properties
         this.maxPoolSize = 50; // Maximum number of asteroids to keep in the pool
         this.asteroidPool = []; // Pool for regular asteroids
-        this.bigAsteroidPool = []; // Pool for big asteroids
+        
+        // Mega asteroid properties
+        this.megaAsteroidPool = []; // Pool for mega asteroids
+        this.baseMegaAsteroidSpeed = 20; // Much slower than regular asteroids
+        this.megaAsteroidSpawnChance = 0.15; // 15% chance when spawning
+        this.maxMegaPoolSize = 2; // Start with max 2 mega asteroids
+        this.megaAsteroidScale = 0.4; // Increased from 0.25 for larger visual size
         
         // Culling zone properties
         this.cullingMargin = 400; // Extra margin beyond screen for culling
@@ -101,9 +95,26 @@ export default class GameScene extends Phaser.Scene {
     preload() {
         // Load asteroid sprites (for gameplay)
         this.load.image('asteroid', redPlanet);
-        this.load.image('bigAsteroid', greyPlanet);
         this.load.image('player', starship);
         this.load.image('halfEarth', halfEarth);
+        this.load.image('mega-asteroid', greyPlanet);
+
+        // Load custom font using FontFace API
+        const customFont = new FontFace('Micro 5', 'url(src/assets/fonts/Micro5-Regular.ttf)');
+        customFont.load().then((font) => {
+            document.fonts.add(font);
+            this.fontLoaded = true;
+            
+            // Update text styles if they exist
+            if (this.scoreText) this.scoreText.setStyle(FontStyles.hud);
+            if (this.playerNameText) this.playerNameText.setStyle(FontStyles.hud);
+            if (this.gameOverText) this.gameOverText.setStyle(FontStyles.gameOver);
+            if (this.finalScoreText) this.finalScoreText.setStyle(FontStyles.medium);
+            if (this.debugText) this.debugText.setStyle(FontStyles.standard);
+            if (this.fpsText) this.fpsText.setStyle(FontStyles.standard);
+        }).catch((error) => {
+            console.error('Font loading failed:', error);
+        });
 
         // Load all background planet variants
         this.load.image('bluePlanetOne', bluePlanetOne);
@@ -124,14 +135,6 @@ export default class GameScene extends Phaser.Scene {
         this.load.image('ringPlanetGreen', ringPlanetGreen);
         this.load.image('ringedPlanetBrown', ringedPlanetBrown);
         this.load.image('yellowPlanetOne', yellowPlanetOne);
-        
-        // Ensure font is loaded
-        this.fontLoaded = false;
-        
-        // Create a WebFont loader event
-        document.fonts.ready.then(() => {
-            this.fontLoaded = true;
-        });
     }
 
     create() {
@@ -181,53 +184,51 @@ export default class GameScene extends Phaser.Scene {
         // Set up collision detection
         this.setupCollisions();
         
-        // Create score text with a fallback font until our custom font is loaded
-        const initialTextStyle = {
-            fontFamily: this.fontLoaded ? 'Micro 5' : 'monospace',
-            fontSize: '24px',
-            fill: '#fff',
-            padding: { x: 10, y: 10 }
-        };
+        // Determine if we're on mobile for responsive UI
+        this.isMobile = this.game.device.os.android || this.game.device.os.iOS || 
+                         this.game.device.os.iPad || this.game.device.os.iPhone || 
+                         (window.innerWidth < 1024) ||
+                         ('ontouchstart' in window);
         
-        this.scoreText = this.add.text(10, 10, 'HEIGHT: 0', initialTextStyle).setScrollFactor(0);
+        // Create score text with proper font handling
+        this.scoreText = this.add.text(16, 16, 'HEIGHT: 0', FontStyles.hud)
+            .setScrollFactor(0)
+            .setDepth(1000); // Ensure it's above other elements
         
         // Add player name text
         this.playerNameText = this.add.text(
-            10, 
-            40, 
+            16, 
+            60, // Position lower for better spacing
             `PLAYER: ${this.playerName}`, 
-            initialTextStyle
-        ).setScrollFactor(0);
-        
-        // Check if font is loaded, if not, wait for it
-        if (!this.fontLoaded) {
-            const checkFontLoaded = () => {
-                if (document.fonts.check('1em "Micro 5"')) {
-                    this.fontLoaded = true;
-                    this.scoreText.setStyle(textStyle);
-                    this.playerNameText.setStyle(textStyle);
-                    return;
-                }
-                setTimeout(checkFontLoaded, 100);
-            };
-            checkFontLoaded();
-        }
+            FontStyles.hud
+        )
+        .setScrollFactor(0)
+        .setDepth(1000); // Ensure it's above other elements
         
         // Set up input
         this.cursors = this.input.keyboard.createCursorKeys();
         
-        // Set up asteroid spawning
-        this.spawnTimer = this.time.addEvent({
-            delay: 500,
-            callback: this.spawnAsteroid,
-            callbackScope: this,
-            loop: true
-        });
+        // Set up mobile touch controls
+        this.setupMobileControls();
         
-        // Set up big asteroid spawning (less frequent)
-        this.bigAsteroidTimer = this.time.addEvent({
-            delay: 5000,
-            callback: this.spawnBigAsteroid,
+        // Calculate initial spawn delay based on height
+        const initialSpawnDelay = this.calculateSpawnDelay(0);
+        
+        // Set up asteroid spawning with dynamic delay
+        this.spawnTimer = this.time.addEvent({
+            delay: initialSpawnDelay,
+            callback: () => {
+                this.spawnAsteroid();
+                // Update spawn delay based on current height
+                const newDelay = this.calculateSpawnDelay(this.score);
+                this.spawnTimer.delay = newDelay;
+                this.spawnTimer.reset({
+                    delay: newDelay,
+                    callback: this.spawnAsteroid,
+                    callbackScope: this,
+                    loop: true
+                });
+            },
             callbackScope: this,
             loop: true
         });
@@ -235,17 +236,16 @@ export default class GameScene extends Phaser.Scene {
         // Initialize object pools
         this.initializeObjectPools();
         
-        // Set up culling bounds
+        // Set up debug mode if needed
+        if (this.debugMode) {
+            this.setupDebugMode();
+        }
+        
+        // Update culling bounds
         this.updateCullingBounds();
         
-        // Listen for resize events to update culling bounds
+        // Handle window resize
         this.scale.on('resize', this.handleResize, this);
-        
-        // Setup debug visualization
-        this.setupDebugMode();
-        
-        // Add player to spatial grid
-        this.spatialGrid.addObject(this.player, this.gridCellSize);
     }
     
     setupCollisions() {
@@ -280,24 +280,16 @@ export default class GameScene extends Phaser.Scene {
         // Create explosion effect
         this.createExplosion(player.x, player.y);
         
-        // Use a fallback font if our custom font isn't loaded yet
-        const gameOverTextStyle = {
-            fontFamily: this.fontLoaded ? 'Micro 5' : 'monospace',
-            fontSize: '800px',
-            fill: '#ff0000',
-            align: 'center',
-            padding: { x: 40, y: 40 },
-            stroke: '#000000',
-            strokeThickness: 16
-        };
-        
         // Show game over text
         const gameOverText = this.add.text(
             this.cameras.main.width / 2,
             this.cameras.main.height / 2,
             'GAME OVER',
-            gameOverTextStyle
-        ).setOrigin(0.5).setScrollFactor(0);
+            FontStyles.gameOver
+        )
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(2000); // Ensure it's above everything
         
         // Scale to fit screen
         const scale = Math.min(
@@ -306,24 +298,25 @@ export default class GameScene extends Phaser.Scene {
         );
         gameOverText.setScale(scale);
         
-        // Show final score with fallback font if needed
-        const finalScoreTextStyle = {
-            fontFamily: this.fontLoaded ? 'Micro 5' : 'monospace',
-            fontSize: '32px',
-            fill: '#ffffff',
-            align: 'center'
-        };
+        // Store reference to game over text
+        this.gameOverText = gameOverText;
         
+        // Show final score
         const finalScoreText = this.add.text(
             this.cameras.main.width / 2,
-            this.cameras.main.height / 2 + 100,
+            this.cameras.main.height / 2 + 150, // Position lower
             `FINAL HEIGHT: ${this.score}`,
-            finalScoreTextStyle
-        ).setOrigin(0.5).setScrollFactor(0);
+            FontStyles.medium
+        )
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(2000); // Ensure it's above everything
+        
+        // Store reference to final score text
+        this.finalScoreText = finalScoreText;
         
         // Stop asteroid spawning
         this.spawnTimer.remove();
-        this.bigAsteroidTimer.remove();
         
         console.log('Transitioning to LeaderboardScene in 3 seconds');
         
@@ -372,9 +365,18 @@ export default class GameScene extends Phaser.Scene {
         // Only check collisions with nearby objects
         for (const obj of nearbyObjects) {
             if (obj !== this.player && obj.active) {
-                // Get accurate collision radii based on actual scaled size
+                // Get player collision radius
                 const playerRadius = this.player.width * this.player.scale * 0.3;
-                const objRadius = obj.width * obj.scale * 0.3;
+                
+                // Get object collision radius (larger for mega asteroids)
+                let objRadius;
+                if (obj.isMega) {
+                    // For mega asteroids, use a radius about 1x the visual size
+                    objRadius = obj.width * obj.scale * 0.51; // 0.51 is half of 1.02 (radius vs diameter)
+                } else {
+                    // For regular asteroids, use the standard radius
+                    objRadius = obj.width * obj.scale * 0.3;
+                }
                 
                 // Calculate distance between centers
                 const distance = Phaser.Math.Distance.Between(
@@ -383,15 +385,17 @@ export default class GameScene extends Phaser.Scene {
                 );
                 
                 // Check if distance is less than sum of radii (with a small buffer)
-                if (distance < (playerRadius + objRadius) * 0.9) {
-                    // Add debug visualization of collision if in debug mode
-                    if (this.debugMode && this.showCollisionDebug) {
-                        this.debugGraphics.lineStyle(2, 0xff0000, 1);
-                        this.debugGraphics.strokeCircle(this.player.x, this.player.y, playerRadius);
-                        this.debugGraphics.strokeCircle(obj.x, obj.y, objRadius);
-                        this.debugGraphics.lineBetween(this.player.x, this.player.y, obj.x, obj.y);
-                    }
-                    
+                const collision = (distance < (playerRadius + objRadius) * 0.9);
+                
+                // Add debug visualization if in debug mode
+                if (collision && this.debugMode && this.showCollisionDebug) {
+                    this.debugGraphics.lineStyle(2, 0xff0000, 1);
+                    this.debugGraphics.strokeCircle(this.player.x, this.player.y, playerRadius);
+                    this.debugGraphics.strokeCircle(obj.x, obj.y, objRadius);
+                    this.debugGraphics.lineBetween(this.player.x, this.player.y, obj.x, obj.y);
+                }
+                
+                if (collision) {
                     this.handleCollision(this.player, obj);
                     break;
                 }
@@ -416,39 +420,41 @@ export default class GameScene extends Phaser.Scene {
             asteroid.setActive(false);
             asteroid.setVisible(false);
         }
-        
-        // Create initial pool of big asteroids
-        for (let i = 0; i < 5; i++) {
-            const bigAsteroid = this.physics.add.sprite(0, 0, 'bigAsteroid');
-            bigAsteroid.setScale(0.16);
+
+        // Create initial pool of mega asteroids
+        for (let i = 0; i < this.maxMegaPoolSize; i++) {
+            const megaAsteroid = this.physics.add.sprite(0, 0, 'mega-asteroid');
+            megaAsteroid.setScale(this.megaAsteroidScale);
             
-            // Set circular physics body
-            const radius = bigAsteroid.width * 0.35;
-            bigAsteroid.setCircle(radius,
-                (bigAsteroid.width - radius * 2) / 2,
-                (bigAsteroid.height - radius * 2) / 2);
-                
-            // Add to pool and disable
-            this.bigAsteroidPool.push(bigAsteroid);
-            bigAsteroid.setActive(false);
-            bigAsteroid.setVisible(false);
+            // Use a circular collision body that's about 1x the visual size (reduced by 15% from 1.2x)
+            const baseRadius = megaAsteroid.width / 2;
+            const scaledRadius = baseRadius * this.megaAsteroidScale * 1.02; // 1.2 * 0.85 = 1.02
+            
+            // We need to convert back to the unscaled radius for setCircle
+            const unscaledRadius = scaledRadius / this.megaAsteroidScale;
+            
+            megaAsteroid.body.setCircle(unscaledRadius, 
+                (megaAsteroid.width - unscaledRadius * 2) / 2,
+                (megaAsteroid.height - unscaledRadius * 2) / 2);
+            
+            // Add to mega pool and disable
+            this.megaAsteroidPool.push(megaAsteroid);
+            megaAsteroid.setActive(false);
+            megaAsteroid.setVisible(false);
+            megaAsteroid.isMega = true; // Flag to identify mega asteroids
         }
     }
     
-    getPooledAsteroid(isLarge = false) {
-        // Get from the appropriate pool
-        const pool = isLarge ? this.bigAsteroidPool : this.asteroidPool;
-        
+    getPooledAsteroid() {
         // Try to find an inactive asteroid in the pool
-        let asteroid = pool.find(a => !a.active);
+        let asteroid = this.asteroidPool.find(a => !a.active);
         
         if (!asteroid) {
             // If pool is full, create a new one
-            const texture = isLarge ? 'bigAsteroid' : 'asteroid';
-            asteroid = this.physics.add.sprite(0, 0, texture);
+            asteroid = this.physics.add.sprite(0, 0, 'asteroid');
             
             // Set appropriate scale
-            asteroid.setScale(isLarge ? 0.16 : 0.08);
+            asteroid.setScale(0.08);
             
             // Set circular physics body
             const radius = asteroid.width * 0.35;
@@ -457,7 +463,7 @@ export default class GameScene extends Phaser.Scene {
                 (asteroid.height - radius * 2) / 2);
                 
             // Add to pool
-            pool.push(asteroid);
+            this.asteroidPool.push(asteroid);
         }
         
         // Activate the asteroid
@@ -473,102 +479,104 @@ export default class GameScene extends Phaser.Scene {
         return asteroid;
     }
     
-    recycleAsteroid(asteroid) {
-        if (!asteroid) return;
+    getPooledMegaAsteroid() {
+        // Try to find an inactive mega asteroid in the pool
+        let megaAsteroid = this.megaAsteroidPool.find(a => !a.active);
         
-        // Remove from spatial grid
-        if (this.spatialGrid) {
-            this.spatialGrid.removeObject(asteroid);
+        // Only create new mega asteroid if below max pool size
+        if (!megaAsteroid && this.megaAsteroidPool.length < this.getMaxMegaPoolSize()) {
+            megaAsteroid = this.physics.add.sprite(0, 0, 'mega-asteroid');
+            megaAsteroid.setScale(this.megaAsteroidScale);
+            
+            // Use a circular collision body that's about 1x the visual size (reduced by 15% from 1.2x)
+            const baseRadius = megaAsteroid.width / 2;
+            const scaledRadius = baseRadius * this.megaAsteroidScale * 1.02; // 1.2 * 0.85 = 1.02
+            
+            // We need to convert back to the unscaled radius for setCircle
+            const unscaledRadius = scaledRadius / this.megaAsteroidScale;
+            
+            megaAsteroid.body.setCircle(unscaledRadius, 
+                (megaAsteroid.width - unscaledRadius * 2) / 2,
+                (megaAsteroid.height - unscaledRadius * 2) / 2);
+            
+            megaAsteroid.isMega = true;
+            this.megaAsteroidPool.push(megaAsteroid);
         }
         
-        // Remove from physics group but keep in pool
-        this.asteroids.remove(asteroid, false, false);
+        if (megaAsteroid) {
+            // Activate the mega asteroid
+            megaAsteroid.setActive(true);
+            megaAsteroid.setVisible(true);
+            
+            // Add to the asteroids group for collision detection
+            this.asteroids.add(megaAsteroid);
+            
+            // Add to spatial grid
+            this.spatialGrid.addObject(megaAsteroid, this.gridCellSize);
+        }
         
-        // Deactivate the asteroid
-        asteroid.setActive(false);
-        asteroid.setVisible(false);
-        
-        // Reset physics
-        asteroid.setVelocity(0, 0);
-        asteroid.setAngularVelocity(0);
-        asteroid.setPosition(0, 0);
-        
-        // Clear any other references or properties
-        asteroid.cellKey = null;
-        asteroid.skipUpdate = false;
+        return megaAsteroid;
+    }
+
+    // Calculate spawn delay based on height
+    calculateSpawnDelay(score) {
+        const heightLevel = Math.floor(score / this.difficultyInterval);
+        // Reduce delay by 10% for each height level, but never below 100ms
+        return Math.max(100, this.baseSpawnDelay * Math.pow(0.9, heightLevel));
+    }
+
+    // Calculate asteroid speed based on height
+    calculateAsteroidSpeed(score) {
+        const heightLevel = Math.floor(score / this.difficultyInterval);
+        // Increase speed by 10% for each height level
+        return this.baseAsteroidSpeed * (1 + (heightLevel * 0.1));
     }
 
     spawnAsteroid() {
         if (this.gameOver) return;
 
         const cameraY = this.cameras.main.scrollY;
-        const spawnY = cameraY - 50;
+        
+        // Spawn regular asteroids 100px off-screen, mega asteroids 300px off-screen
+        const regularOffset = 100;
+        const megaOffset = 300;
 
-        if (spawnY < 0) return;
+        if (cameraY < 0) return;
 
         // Adjust X position range based on screen width
         const x = Phaser.Math.Between(50, this.gameWidth - 50);
         
-        // Get asteroid from pool instead of creating new one
-        const asteroid = this.getPooledAsteroid(false);
+        // Determine if we should spawn a mega asteroid
+        const shouldSpawnMega = Math.random() < this.megaAsteroidSpawnChance;
         
-        // Position the asteroid
-        asteroid.setPosition(x, spawnY);
+        // Get appropriate asteroid from pool
+        const asteroid = shouldSpawnMega ? 
+            this.getPooledMegaAsteroid() : 
+            this.getPooledAsteroid();
         
-        // Reset scale in case it was modified
-        asteroid.setScale(0.08);
+        // If we couldn't get an asteroid (pool full), just return
+        if (!asteroid) return;
         
-        // Set constant diagonal velocity with additional downward component
+        // Position the asteroid - use different offsets based on type
+        const offset = asteroid.isMega ? megaOffset : regularOffset;
+        asteroid.setPosition(x, cameraY - offset);
+        
+        // Calculate speed based on current height and type
+        const speed = asteroid.isMega ? 
+            this.calculateMegaAsteroidSpeed(this.score) : 
+            this.calculateAsteroidSpeed(this.score);
+        
+        // Set diagonal velocity with additional downward component
         const angle = Phaser.Math.Between(30, 150); // Angle in degrees (avoiding pure vertical)
-        const speed = 80; // Constant speed
         const velocityX = speed * Math.cos(Phaser.Math.DegToRad(angle));
         const velocityY = -speed * Math.sin(Phaser.Math.DegToRad(angle)) + 200; // Add downward velocity component
         asteroid.setVelocity(velocityX, velocityY);
         
-        // Add rotation
-        asteroid.setAngularVelocity(Phaser.Math.Between(-50, 50));
-    }
-
-    spawnBigAsteroid() {
-        if (this.gameOver) return;
-        
-        if (this.score < 2500) return; // Adjusted from 250 to match new world height (10x)
-
-        const cameraY = this.cameras.main.scrollY;
-        const spawnY = cameraY - 500;
-
-        if (spawnY < 0) return;
-
-        // Adjust X position range based on screen width
-        const x = Phaser.Math.Between(this.gameWidth * 0.3, this.gameWidth * 0.7);
-        
-        // Get big asteroid from pool
-        const asteroid = this.getPooledAsteroid(true);
-        
-        // Position the asteroid
-        asteroid.setPosition(x, spawnY);
-        
-        // Calculate maximum scale based on screen width (1/3 of screen width)
-        const maxScale = (this.gameWidth / 3) / asteroid.width;
-        
-        // Regular asteroid base scale is 0.08, so we'll start at 2x that
-        const baseScale = 0.16; // 2x regular asteroid size
-        
-        // Adjust growth rate to reach 5x regular size (0.4) more gradually
-        const growthScore = Math.max(0, this.score - 2500); // Start growing immediately (adjusted from 250)
-        const targetMaxScale = 0.4; // 5x the regular asteroid size (0.08 * 5)
-        const scoreScale = (growthScore / 10000) * (targetMaxScale - baseScale); // Adjusted from 1000
-        
-        // Apply scale with both the score-based growth and the maximum cap
-        const scale = Math.min(baseScale + scoreScale, maxScale);
-        asteroid.setScale(scale);
-        
-        // Set downward velocity (faster than before to compensate for no gravity)
-        const speed = 150; // Increased from 3 to make it more challenging
-        asteroid.setVelocityY(speed);
-        
-        // Very slow rotation for more menacing feel
-        asteroid.setAngularVelocity(Phaser.Math.Between(-0.5, 0.5));
+        // Add rotation (slower for mega asteroids)
+        const rotationSpeed = asteroid.isMega ? 
+            Phaser.Math.Between(-25, 25) : 
+            Phaser.Math.Between(-50, 50);
+        asteroid.setAngularVelocity(rotationSpeed);
     }
 
     createStarfield() {
@@ -598,22 +606,92 @@ export default class GameScene extends Phaser.Scene {
         // Update camera bounds
         this.cameras.main.setBounds(0, 0, this.gameWidth, this.worldHeight);
         
+        // Detect if we're on a mobile device
+        const isMobile = this.game.device.os.android || 
+                         this.game.device.os.iOS || 
+                         this.game.device.os.iPad || 
+                         this.game.device.os.iPhone || 
+                         (window.innerWidth < 1024) ||
+                         ('ontouchstart' in window);
+        
         // Adjust UI elements
         if (this.scoreText) {
             this.scoreText.setPosition(16, 16);
+            // Always use larger font size from FontStyles.hud
+            this.scoreText.setStyle(FontStyles.hud);
         }
         
         if (this.playerNameText) {
-            this.playerNameText.setPosition(16, 46);
+            this.playerNameText.setPosition(16, 60);
+            // Always use larger font size from FontStyles.hud
+            this.playerNameText.setStyle(FontStyles.hud);
         }
         
         if (this.gameOverText) {
             this.gameOverText.setPosition(this.gameWidth / 2, this.gameHeight / 2);
-            this.gameOverText.setFontSize(this.gameWidth / 10);
+            // Scale to fit screen
+            const scale = Math.min(
+                this.gameWidth / (this.gameOverText.width * 1.2),
+                this.gameHeight / (this.gameOverText.height * 1.2)
+            );
+            this.gameOverText.setScale(scale);
         }
-        if (this.restartText) {
-            this.restartText.setPosition(this.gameWidth / 2, this.gameHeight * 0.75);
-            this.restartText.setFontSize(this.gameWidth / 15);
+        
+        if (this.finalScoreText) {
+            this.finalScoreText.setPosition(this.gameWidth / 2, this.gameHeight / 2 + 150);
+            this.finalScoreText.setStyle(FontStyles.medium);
+        }
+        
+        // Update debug text position if it exists
+        if (this.debugText) {
+            this.debugText.setPosition(10, 10);
+            this.debugText.setStyle(FontStyles.standard);
+        }
+        
+        // Update FPS text position if it exists
+        if (this.fpsText) {
+            this.fpsText.setPosition(10, this.gameHeight - 30);
+            this.fpsText.setStyle(FontStyles.standard);
+        }
+        
+        // Update mobile controls if they exist
+        if (this.leftButton && this.rightButton) {
+            // Position controls higher on the screen for better visibility
+            const controlY = this.gameHeight * 0.75;
+            
+            // Use consistent large button scale
+            const buttonScale = 0.35;
+            
+            // Position buttons wider apart
+            const margin = this.gameWidth * 0.2;
+            const leftX = margin;
+            const rightX = this.gameWidth - margin;
+            
+            // Update button positions
+            this.leftButton.setPosition(leftX, controlY);
+            this.rightButton.setPosition(rightX, controlY);
+            
+            // Update text positions
+            if (this.leftText) {
+                this.leftText.setPosition(leftX, controlY);
+            }
+            
+            if (this.rightText) {
+                this.rightText.setPosition(rightX, controlY);
+            }
+            
+            // Maintain visibility settings based on device type
+            const shouldShowControls = isMobile;
+            this.leftButton.setVisible(shouldShowControls);
+            this.rightButton.setVisible(shouldShowControls);
+            
+            if (this.leftText) {
+                this.leftText.setVisible(shouldShowControls);
+            }
+            
+            if (this.rightText) {
+                this.rightText.setVisible(shouldShowControls);
+            }
         }
     }
 
@@ -638,43 +716,23 @@ export default class GameScene extends Phaser.Scene {
     }
 
     setupDebugMode() {
-        // Create debug graphics object
+        // Create debug graphics
         this.debugGraphics = this.add.graphics();
         
-        // Create debug text with a fallback font
-        const debugTextStyle = {
-            fontFamily: 'Arial',
-            fontSize: '12px',
-            fill: '#00ff00'
-        };
-        
-        this.debugText = this.add.text(10, 10, '', debugTextStyle)
+        // Create debug text
+        this.debugText = this.add.text(10, 10, '', FontStyles.standard)
             .setScrollFactor(0)
             .setDepth(1000);
         
-        // Create FPS counter with a fallback font
-        this.fpsText = this.add.text(10, 30, '', debugTextStyle)
+        // Create FPS counter
+        this.fpsText = this.add.text(10, this.gameHeight - 30, '', FontStyles.standard)
             .setScrollFactor(0)
             .setDepth(1000);
         
-        // Toggle debug mode with D key
-        this.input.keyboard.on('keydown-D', () => {
-            this.debugMode = !this.debugMode;
-            this.debugText.setVisible(this.debugMode);
-            this.fpsText.setVisible(this.debugMode);
-            if (!this.debugMode) {
-                this.debugGraphics.clear();
-            }
-        });
-        
-        // Toggle collision debug with C key
+        // Add key to toggle collision debug
         this.input.keyboard.on('keydown-C', () => {
             this.showCollisionDebug = !this.showCollisionDebug;
         });
-        
-        // Initially hide debug elements
-        this.debugText.setVisible(false);
-        this.fpsText.setVisible(false);
     }
     
     initSpatialGrid() {
@@ -794,30 +852,19 @@ export default class GameScene extends Phaser.Scene {
         // Clear previous debug graphics
         this.debugGraphics.clear();
         
-        // Draw culling bounds
-        this.debugGraphics.lineStyle(2, 0xff0000, 0.5);
-        this.debugGraphics.strokeRect(
-            this.cullingBounds.left,
-            this.cullingBounds.top,
-            this.cullingBounds.right - this.cullingBounds.left,
-            this.cullingBounds.bottom - this.cullingBounds.top
-        );
-        
-        // Draw active objects and their collision circles
-        this.debugGraphics.lineStyle(1, 0x00ff00, 0.5);
+        // Count active asteroids
         let activeCount = 0;
-        this.asteroids.children.iterate((asteroid) => {
-            if (asteroid && asteroid.active) {
-                activeCount++;
-                // Draw object
-                this.debugGraphics.strokeCircle(asteroid.x, asteroid.y, 20);
-                
-                // Draw collision radius if collision debug is enabled
-                if (this.showCollisionDebug) {
-                    const collisionRadius = asteroid.width * asteroid.scale * 0.3;
-                    this.debugGraphics.lineStyle(1, 0xffff00, 0.3);
-                    this.debugGraphics.strokeCircle(asteroid.x, asteroid.y, collisionRadius);
-                }
+        let activeMegaCount = 0;
+        
+        this.asteroids.getChildren().forEach(asteroid => {
+            activeCount++;
+            if (asteroid.isMega) activeMegaCount++;
+            
+            // Draw asteroid collision radius if collision debug is enabled
+            if (this.showCollisionDebug) {
+                const asteroidCollisionRadius = asteroid.width * asteroid.scale * 0.5;
+                this.debugGraphics.lineStyle(1, 0xff0000, 0.5);
+                this.debugGraphics.strokeCircle(asteroid.x, asteroid.y, asteroidCollisionRadius);
             }
         });
         
@@ -828,59 +875,14 @@ export default class GameScene extends Phaser.Scene {
             this.debugGraphics.strokeCircle(this.player.x, this.player.y, playerCollisionRadius);
         }
         
-        // Draw spatial grid (only visible cells)
-        if (this.spatialGrid) {
-            this.debugGraphics.lineStyle(1, 0x0000ff, 0.3);
-            
-            // Get visible area
-            const visibleLeft = this.cameras.main.scrollX;
-            const visibleTop = this.cameras.main.scrollY;
-            const visibleRight = visibleLeft + this.cameras.main.width;
-            const visibleBottom = visibleTop + this.cameras.main.height;
-            
-            // Draw grid lines
-            for (let x = Math.floor(visibleLeft / this.gridCellSize) * this.gridCellSize; 
-                 x <= visibleRight; 
-                 x += this.gridCellSize) {
-                this.debugGraphics.lineBetween(x, visibleTop, x, visibleBottom);
-            }
-            
-            for (let y = Math.floor(visibleTop / this.gridCellSize) * this.gridCellSize; 
-                 y <= visibleBottom; 
-                 y += this.gridCellSize) {
-                this.debugGraphics.lineBetween(visibleLeft, y, visibleRight, y);
-            }
-            
-            // Highlight cells with objects
-            this.debugGraphics.fillStyle(0x0000ff, 0.1);
-            Object.keys(this.spatialGrid.cells).forEach(key => {
-                const [cellX, cellY] = key.split(',').map(Number);
-                const x = cellX * this.gridCellSize;
-                const y = cellY * this.gridCellSize;
-                
-                // Only draw if cell is visible
-                if (x + this.gridCellSize >= visibleLeft && 
-                    x <= visibleRight && 
-                    y + this.gridCellSize >= visibleTop && 
-                    y <= visibleBottom) {
-                    this.debugGraphics.fillRect(
-                        x, y, this.gridCellSize, this.gridCellSize
-                    );
-                }
-            });
-        }
-        
-        // Calculate world progress percentage
-        const worldProgress = ((this.worldHeight - this.player.y) / this.worldHeight * 100).toFixed(2);
-        
         // Update debug text
         this.debugText.setText([
-            `Active Asteroids: ${activeCount}`,
+            `Active Asteroids: ${activeCount} (${activeMegaCount} mega)`,
             `Regular Pool Size: ${this.asteroidPool.length}`,
-            `Big Pool Size: ${this.bigAsteroidPool.length}`,
+            `Mega Pool Size: ${this.megaAsteroidPool.length}/${this.getMaxMegaPoolSize()}`,
             `Player Position: ${Math.floor(this.player.x)}, ${Math.floor(this.player.y)}`,
             `Score: ${this.score}`,
-            `World Progress: ${worldProgress}%`,
+            `World Progress: ${Math.floor((this.worldHeight - this.player.y) / this.worldHeight * 100)}%`,
             `Grid Cells: ${Object.keys(this.spatialGrid.cells).length}`,
             `Collision Debug: ${this.showCollisionDebug ? 'ON' : 'OFF'} (Press C to toggle)`
         ]);
@@ -895,7 +897,7 @@ export default class GameScene extends Phaser.Scene {
         
         // Clear object pools
         this.asteroidPool = [];
-        this.bigAsteroidPool = [];
+        this.megaAsteroidPool = [];
         
         // Clear spatial grid
         if (this.spatialGrid) {
@@ -905,12 +907,204 @@ export default class GameScene extends Phaser.Scene {
         // Remove all event listeners
         this.input.keyboard.removeAllKeys(true);
         
+        // Remove global touch event listeners
+        this.input.off('pointerdown');
+        this.input.off('pointerup');
+        
+        // Clean up mobile controls
+        if (this.leftButton) {
+            this.leftButton.removeAllListeners();
+            this.leftButton.destroy();
+        }
+        if (this.rightButton) {
+            this.rightButton.removeAllListeners();
+            this.rightButton.destroy();
+        }
+        if (this.leftText) this.leftText.destroy();
+        if (this.rightText) this.rightText.destroy();
+        
         // Stop all timers
         if (this.spawnTimer) this.spawnTimer.remove();
-        if (this.bigAsteroidTimer) this.bigAsteroidTimer.remove();
         
         // Clear all tweens
         this.tweens.killAll();
+    }
+
+    // Calculate max mega pool size based on score
+    getMaxMegaPoolSize() {
+        const heightLevel = Math.floor(this.score / this.difficultyInterval);
+        return Math.min(4, this.maxMegaPoolSize + Math.floor(heightLevel / 3));
+    }
+
+    // Calculate mega asteroid speed based on height
+    calculateMegaAsteroidSpeed(score) {
+        const heightLevel = Math.floor(score / this.difficultyInterval);
+        // Increase speed by 5% for each height level (slower progression than regular asteroids)
+        return this.baseMegaAsteroidSpeed * (1 + (heightLevel * 0.05));
+    }
+
+    recycleAsteroid(asteroid) {
+        if (!asteroid) return;
+        
+        // Remove from spatial grid
+        if (this.spatialGrid) {
+            this.spatialGrid.removeObject(asteroid);
+        }
+        
+        // Remove from physics group but keep in pool
+        this.asteroids.remove(asteroid, false, false);
+        
+        // Deactivate the asteroid
+        asteroid.setActive(false);
+        asteroid.setVisible(false);
+        
+        // Reset physics
+        asteroid.setVelocity(0, 0);
+        asteroid.setAngularVelocity(0);
+        asteroid.setPosition(0, 0);
+        
+        // Clear any other references or properties
+        asteroid.cellKey = null;
+        asteroid.skipUpdate = false;
+    }
+
+    setupMobileControls() {
+        // Initialize movement flags
+        this.moveLeft = false;
+        this.moveRight = false;
+        
+        // Detect if we're on a mobile device
+        const isMobile = this.game.device.os.android || 
+                         this.game.device.os.iOS || 
+                         this.game.device.os.iPad || 
+                         this.game.device.os.iPhone || 
+                         (window.innerWidth < 1024) ||
+                         ('ontouchstart' in window);
+        
+        // Position controls higher on the screen for better visibility
+        const controlY = this.gameHeight * 0.75;
+        
+        // MUCH larger buttons for better visibility and touch targets
+        const buttonScale = 0.35; // Significantly larger than before
+        
+        // Position buttons wider apart
+        const margin = this.gameWidth * 0.2;
+        const leftX = margin;
+        const rightX = this.gameWidth - margin;
+        
+        // Create left control button with better visibility
+        this.leftButton = this.add.image(leftX, controlY, 'asteroid')
+            .setScrollFactor(0)
+            .setAlpha(0.9) // More visible
+            .setScale(buttonScale)
+            .setTint(0x0000ff)
+            .setInteractive()
+            .setDepth(100); // Ensure it's above other elements
+            
+        // Create right control button with better visibility
+        this.rightButton = this.add.image(rightX, controlY, 'asteroid')
+            .setScrollFactor(0)
+            .setAlpha(0.9) // More visible
+            .setScale(buttonScale)
+            .setTint(0xff0000)
+            .setInteractive()
+            .setDepth(100); // Ensure it's above other elements
+            
+        // MUCH larger text for better visibility
+        const buttonTextStyle = {
+            fontFamily: '"Micro 5", monospace',
+            fontSize: '64px', // Significantly larger
+            fill: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 6 // Thicker stroke for better visibility
+        };
+        
+        this.leftText = this.add.text(leftX, controlY, '←', buttonTextStyle)
+            .setScrollFactor(0)
+            .setOrigin(0.5)
+            .setDepth(101); // Ensure text is above button
+            
+        this.rightText = this.add.text(rightX, controlY, '→', buttonTextStyle)
+            .setScrollFactor(0)
+            .setOrigin(0.5)
+            .setDepth(101); // Ensure text is above button
+        
+        // Set up event listeners for the left button with more dramatic feedback
+        this.leftButton.on('pointerdown', () => {
+            this.moveLeft = true;
+            this.leftButton.setAlpha(1.0);
+            this.leftButton.setScale(buttonScale * 1.2); // More dramatic growth
+        });
+        
+        this.leftButton.on('pointerout', () => {
+            this.moveLeft = false;
+            this.leftButton.setAlpha(0.9);
+            this.leftButton.setScale(buttonScale);
+        });
+        
+        this.leftButton.on('pointerup', () => {
+            this.moveLeft = false;
+            this.leftButton.setAlpha(0.9);
+            this.leftButton.setScale(buttonScale);
+        });
+        
+        // Set up event listeners for the right button with more dramatic feedback
+        this.rightButton.on('pointerdown', () => {
+            this.moveRight = true;
+            this.rightButton.setAlpha(1.0);
+            this.rightButton.setScale(buttonScale * 1.2); // More dramatic growth
+        });
+        
+        this.rightButton.on('pointerout', () => {
+            this.moveRight = false;
+            this.rightButton.setAlpha(0.9);
+            this.rightButton.setScale(buttonScale);
+        });
+        
+        this.rightButton.on('pointerup', () => {
+            this.moveRight = false;
+            this.rightButton.setAlpha(0.9);
+            this.rightButton.setScale(buttonScale);
+        });
+        
+        // Also handle general screen touches for mobile - larger touch area
+        this.input.on('pointerdown', (pointer) => {
+            // Only process touch events on mobile
+            if (isMobile) {
+                // Check if touch is in the lower 2/3 of the screen for easier control
+                if (pointer.y > this.gameHeight * 0.33) {
+                    if (pointer.x < this.gameWidth / 2) {
+                        this.moveLeft = true;
+                        this.leftButton.setAlpha(1.0);
+                        this.leftButton.setScale(buttonScale * 1.2);
+                    } else {
+                        this.moveRight = true;
+                        this.rightButton.setAlpha(1.0);
+                        this.rightButton.setScale(buttonScale * 1.2);
+                    }
+                }
+            }
+        });
+        
+        this.input.on('pointerup', () => {
+            // Only process touch events on mobile
+            if (isMobile) {
+                this.moveLeft = false;
+                this.moveRight = false;
+                this.leftButton.setAlpha(0.9);
+                this.rightButton.setAlpha(0.9);
+                this.leftButton.setScale(buttonScale);
+                this.rightButton.setScale(buttonScale);
+            }
+        });
+        
+        // Hide controls on desktop
+        if (!isMobile) {
+            this.leftButton.setVisible(false);
+            this.rightButton.setVisible(false);
+            this.leftText.setVisible(false);
+            this.rightText.setVisible(false);
+        }
     }
 
     update() {
@@ -956,10 +1150,10 @@ export default class GameScene extends Phaser.Scene {
             }
         });
 
-        // Simple horizontal movement
-        if (this.cursors.left.isDown) {
+        // Handle keyboard input
+        if (this.cursors.left.isDown || this.moveLeft) {
             this.player.setVelocityX(-this.playerSpeed);
-        } else if (this.cursors.right.isDown) {
+        } else if (this.cursors.right.isDown || this.moveRight) {
             this.player.setVelocityX(this.playerSpeed);
         } else {
             this.player.setVelocityX(0);

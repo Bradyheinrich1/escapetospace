@@ -1,128 +1,184 @@
 import Phaser from 'phaser';
+import { FontStyles } from '../index';
 
 export default class StartScene extends Phaser.Scene {
     constructor() {
         super({ key: 'StartScene' });
         this.playerName = '';
+        this.fontLoaded = false;
+    }
+
+    preload() {
+        // Load background image
+        this.load.image('background', 'assets/takemyhandanon.jpg');
+        
+        // Add load complete event
+        this.load.on('complete', () => {
+            console.log('All assets loaded successfully');
+        });
+
+        this.load.on('loaderror', (fileObj) => {
+            console.error('Error loading asset:', fileObj.src);
+        });
+
+        // Load custom font using FontFace API
+        const customFont = new FontFace('Micro 5', 'url(src/assets/fonts/Micro5-Regular.ttf)');
+        customFont.load().then((font) => {
+            document.fonts.add(font);
+            this.fontLoaded = true;
+            
+            // Update text styles if they exist
+            if (this.titleText) this.titleText.setStyle(FontStyles.title);
+            if (this.namePrompt) this.namePrompt.setStyle(FontStyles.medium);
+            if (this.startText) this.startText.setStyle(FontStyles.medium);
+            if (this.debugText) this.debugText.setStyle(FontStyles.standard);
+        }).catch((error) => {
+            console.error('Font loading failed:', error);
+        });
     }
 
     create() {
-        // Simple black background
-        this.background = this.add.rectangle(0, 0, window.innerWidth, window.innerHeight, 0x000000).setOrigin(0);
+        // Add background image
+        this.background = this.add.image(this.cameras.main.width / 2, this.cameras.main.height / 2, 'background')
+            .setOrigin(0.5);
         
-        // Add some text to confirm the scene is working
-        this.titleText = this.add.text(
+        console.log('Background image dimensions:', {
+            width: this.background.width,
+            height: this.background.height,
+            displayWidth: this.background.displayWidth,
+            displayHeight: this.background.displayHeight
+        });
+        
+        // Scale the background to cover the screen while maintaining aspect ratio
+        const scaleX = this.cameras.main.width / this.background.width;
+        const scaleY = this.cameras.main.height / this.background.height;
+        const scale = Math.max(scaleX, scaleY);
+        this.background.setScale(scale);
+        
+        console.log('Screen dimensions:', {
+            width: this.cameras.main.width,
+            height: this.cameras.main.height,
+            scale: scale
+        });
+        
+        // Add title text with proper font size
+        const titleText = this.add.text(
             this.cameras.main.width / 2,
-            this.cameras.main.height * 0.2,
+            this.cameras.main.height * 0.3,
             'ESCAPE TO SPACE',
-            {
-                fontFamily: 'monospace', // Use a system font first to test
-                fontSize: '64px',
-                fill: '#ffffff',
-                align: 'center'
-            }
+            FontStyles.title
         ).setOrigin(0.5);
         
-        // Add a simple input field
-        this.inputFieldBg = this.add.rectangle(
+        // Add name input prompt with proper font size
+        const namePrompt = this.add.text(
             this.cameras.main.width / 2,
-            this.cameras.main.height * 0.5,
-            300,
-            50,
-            0x333333
-        ).setOrigin(0.5);
-        
-        this.inputText = this.add.text(
-            this.cameras.main.width / 2,
-            this.cameras.main.height * 0.5,
+            this.cameras.main.height * 0.45,
             'Click to enter name',
-            {
-                fontFamily: 'monospace',
-                fontSize: '24px',
-                fill: '#ffffff',
-                align: 'center'
-            }
+            FontStyles.medium
         ).setOrigin(0.5);
         
+        // Start button with proper font size
+        const startButton = this.add.rectangle(
+            this.cameras.main.width / 2,
+            this.cameras.main.height * 0.7,
+            300, // Increased button width for better visibility
+            80,  // Increased button height for better touch targets
+            0x00aa00
+        ).setInteractive();
+        
+        const startText = this.add.text(
+            this.cameras.main.width / 2,
+            this.cameras.main.height * 0.7,
+            'START',
+            FontStyles.medium
+        ).setOrigin(0.5);
+        
+        // Store references for resize handling
+        this.titleText = titleText;
+        this.namePrompt = namePrompt;
+        this.startButton = startButton;
+        this.startText = startText;
+        
+        // Add input field background
+        const inputFieldBg = this.add.rectangle(
+            this.cameras.main.width / 2,
+            this.cameras.main.height * 0.55,
+            400, // Increased width for better visibility
+            80,  // Increased height for better touch targets
+            0x333333,
+            0.8
+        ).setOrigin(0.5).setInteractive();
+
+        // Store the input field reference
+        this.inputFieldBg = inputFieldBg;
+        this.inputText = namePrompt; // Reuse the namePrompt as inputText
+
         // Make input field interactive
-        this.inputFieldBg.setInteractive();
-        this.inputFieldBg.on('pointerdown', () => {
+        inputFieldBg.on('pointerdown', () => {
             // Prompt for name
             const name = prompt('Enter your name:', 'Player');
             if (name && name.trim() !== '') {
                 this.playerName = name.trim();
-                this.inputText.setText(this.playerName);
+                namePrompt.setText(this.playerName);
                 
                 // Enable start button
-                this.startButton.setFillStyle(0x00aa00);
-                this.startText.setFill('#ffffff');
-                this.startButton.setInteractive();
+                startButton.setFillStyle(0x00aa00);
+                startText.setFill('#ffffff');
             }
         });
-        
-        // Start button
-        this.startButton = this.add.rectangle(
-            this.cameras.main.width / 2,
-            this.cameras.main.height * 0.7,
-            200,
-            50,
-            0x444444
-        ).setOrigin(0.5);
-        
-        this.startText = this.add.text(
-            this.cameras.main.width / 2,
-            this.cameras.main.height * 0.7,
-            'START',
-            {
-                fontFamily: 'monospace',
-                fontSize: '24px',
-                fill: '#aaaaaa',
-                align: 'center'
-            }
-        ).setOrigin(0.5);
-        
+
         // Make start button interactive
-        this.startButton.on('pointerdown', () => {
+        startButton.on('pointerdown', () => {
             if (this.playerName) {
                 localStorage.setItem('playerName', this.playerName);
                 this.scene.start('GameScene');
+            } else {
+                // If no name entered, prompt user
+                namePrompt.setText('Please enter a name first!');
+                namePrompt.setFill('#ff0000');
             }
         });
+
+        // Initially disable start button until name is entered
+        startButton.setFillStyle(0x444444);
+        startText.setFill('#aaaaaa');
         
         // Debug info
-        this.debugText = this.add.text(10, 10, 'StartScene loaded', { fontFamily: 'monospace', fontSize: '16px', fill: '#ffffff' });
+        this.debugText = this.add.text(10, 10, 'StartScene loaded', FontStyles.standard);
         
         // Handle window resize
         this.scale.on('resize', this.handleResize, this);
     }
     
     handleResize() {
-        // Update positions of UI elements on resize
-        const width = this.cameras.main.width;
-        const height = this.cameras.main.height;
-        
-        // Update background
-        if (this.background) {
-            this.background.setSize(width, height);
-        }
+        const width = window.innerWidth;
+        const height = window.innerHeight;
         
         // Update title position
         if (this.titleText) {
-            this.titleText.setPosition(width / 2, height * 0.2);
+            this.titleText.setPosition(width / 2, height * 0.3);
         }
         
         // Update input field
+        if (this.namePrompt) {
+            this.namePrompt.setPosition(width / 2, height * 0.45);
+        }
+        
+        // Update input field background
         if (this.inputFieldBg) {
-            this.inputFieldBg.setPosition(width / 2, height * 0.5);
+            this.inputFieldBg.setPosition(width / 2, height * 0.55);
         }
         
-        if (this.inputText) {
-            this.inputText.setPosition(width / 2, height * 0.5);
-        }
-        
-        // Update start button
+        // Update start button - add null check before calling setSize
         if (this.startButton) {
             this.startButton.setPosition(width / 2, height * 0.7);
+            // Ensure button size is appropriate for the screen
+            if (this.startButton.setSize) {
+                this.startButton.setSize(
+                    Math.min(300, width * 0.8), 
+                    80
+                );
+            }
         }
         
         if (this.startText) {

@@ -5,6 +5,58 @@ import LeaderboardScene from './scenes/LeaderboardScene';
 // Import the font to ensure it's included in the bundle
 import './assets/fonts/Micro5-Regular.ttf';
 
+// Global font style configuration
+export const FontStyles = {
+    // Title text (large headers)
+    title: {
+        fontFamily: '"Micro 5", monospace',
+        fontSize: '64px',
+        fill: '#ffffff',
+        align: 'center',
+        stroke: '#000000',
+        strokeThickness: 6,
+        shadow: { blur: 8, fill: true, offsetX: 2, offsetY: 2 }
+    },
+    // Medium sized text (buttons, headers)
+    medium: {
+        fontFamily: '"Micro 5", monospace',
+        fontSize: '36px',
+        fill: '#ffffff',
+        align: 'center',
+        stroke: '#000000',
+        strokeThickness: 4,
+        shadow: { blur: 4, fill: true, offsetX: 1, offsetY: 1 }
+    },
+    // Standard text (regular UI elements)
+    standard: {
+        fontFamily: '"Micro 5", monospace',
+        fontSize: '28px',
+        fill: '#ffffff',
+        align: 'center',
+        stroke: '#000000',
+        strokeThickness: 3
+    },
+    // HUD text (score, player name)
+    hud: {
+        fontFamily: '"Micro 5", monospace',
+        fontSize: '32px',
+        fill: '#ffffff',
+        padding: { x: 10, y: 10 },
+        stroke: '#000000',
+        strokeThickness: 4
+    },
+    // Game over text
+    gameOver: {
+        fontFamily: '"Micro 5", monospace',
+        fontSize: '120px',
+        fill: '#ff0000',
+        align: 'center',
+        padding: { x: 40, y: 40 },
+        stroke: '#000000',
+        strokeThickness: 16
+    }
+};
+
 // Add console logs for debugging
 console.log('Game initialization started');
 
