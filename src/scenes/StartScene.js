@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { FontStyles } from '../index';
+import backgroundImage from '../assets/takemyhandanon.jpg';
 
 export default class StartScene extends Phaser.Scene {
     constructor() {
@@ -10,7 +11,7 @@ export default class StartScene extends Phaser.Scene {
 
     preload() {
         // Load background image
-        this.load.image('background', 'assets/takemyhandanon.jpg');
+        this.load.image('background', backgroundImage);
         
         // Add load complete event
         this.load.on('complete', () => {
@@ -22,7 +23,7 @@ export default class StartScene extends Phaser.Scene {
         });
 
         // Load custom font using FontFace API
-        const customFont = new FontFace('Micro 5', 'url(src/assets/fonts/Micro5-Regular.ttf)');
+        const customFont = new FontFace('Micro 5', 'url(assets/fonts/Micro5-Regular.ttf)');
         customFont.load().then((font) => {
             document.fonts.add(font);
             this.fontLoaded = true;

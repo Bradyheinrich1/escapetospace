@@ -33,7 +33,7 @@ export default class LeaderboardScene extends Phaser.Scene {
 
     preload() {
         // Load custom font using FontFace API
-        const customFont = new FontFace('Micro 5', 'url(src/assets/fonts/Micro5-Regular.ttf)');
+        const customFont = new FontFace('Micro 5', 'url(assets/fonts/Micro5-Regular.ttf)');
         customFont.load().then((font) => {
             document.fonts.add(font);
             this.fontLoaded = true;
